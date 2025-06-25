@@ -1,0 +1,47 @@
+---
+title: "Comparison of Hyperparameter Tuning Strategies"
+format:
+  html:
+    self-contained: true
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    theme: minty
+    number-sections: false
+execute:
+  warning: false
+  message: false
+---
+  
+
+## Support vector machines on Spam Dataset
+
+Use a binary classification dataset of email spam. The Spam dataset (e.g., the Spambase dataset from UCI, available in R via kernlab package’s spam data) contains emails labeled as spam or non-spam with various features (word frequencies, etc.). 
+
+- The task is to classify emails as spam or not spam. Evaluate model performance with AUC (Area Under the ROC Curve), a threshold-independent metric (higher is better).
+
+
+Use a Support Vector Machine with RBF kernel (`svm_rbf()` from `parsnip` via `kernlab` engine, that is the original package that is selected via `set_engine` in the model specification). 
+
+Hyperparameters to tune:
+
+`cost (C)`: regularization parameter controlling margin hardness.
+
+`rbf_sigma` (γ): RBF kernel coefficient (controls influence of a single training point).
+
+Compare with grid, random, and Bayesian tuning 
+
+
+Load the spam data and prepare training/test splits and cross-validation folds. In the pre-processing, remove zero-variance predictors (`step_zv`) and scale the features (`step_nomalize`), which is important for SVMs. Also, if check that the response is a factor, if not, make it so.
+
+
+- Set up a grid for `cost` and `rbf_sigma`. These hyperparameters typically span orders of magnitude, so using a log10 scale is common. Create a kxk grid in a broad range of values, choose `k` the number of levels per hyperparameter in the grid (e.g., `cost` 10^-2 to 10^2, `sigma` 10^-5 to 10^-1).
+
+- Do the grid search using the same number of combiantions considered in the grid search (that is, kxk) 
+
+- perform a bayesian optimization search with 5 initial points and 15 iterations, or you can pick up more initial points and do less iterations, as long as the total number of points is the same as in the grid search (kxk). 
+
+- illustrate on a density map the behaviour of the three methods: map `cost` to $x$, `rbf_sigma` to $y$, and the AUC to the color.
+

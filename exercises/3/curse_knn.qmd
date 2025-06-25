@@ -1,0 +1,194 @@
+
+install.packages("kknn")
+---
+title: "KNN and the Curse of Dimensionality"
+subtitle: "Regression"
+format: html
+code-fold: true
+code-tools: true
+embed-resources: true
+page-layout: full
+toc: true
+toc-title: tasks
+toc-location: left
+toc-expand: 2
+theme: minty
+knitr:
+  opts_chunk: 
+    collapse: true
+    R.options:
+      message: false
+      warning: false
+    code-fold: false
+---
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+```
+
+### Data Generation
+
+This is your model:
+
+$$
+y_{i} = \beta_{1}x_{i1}+\epsilon_{i}
+$$
+
+where $\epsilon_{i} \sim N(0, \sigma^{2})$ and $x_{i1} \sim U(0,1)$. 
+
+We pick $n = 1000$, $\beta_1 = 3$, and $\sigma^2 = 1$.
+
+```{r}
+set.seed(123)
+n <- 1000
+beta1 <- 3
+sigma <- 1
+
+x1 <- runif(n)
+epsilon <- rnorm(n, mean = 0, sd = sigma)
+y <- beta1 * x1 + epsilon
+
+df <- tibble(x1 = x1, y = y)
+```
+
+---
+
+### Basic Fit
+
+Fit both linear regression and KNN regression to the data and evaluate their performance on the test set.
+
+```{r}
+set.seed(123)
+split <- initial_split(df, prop = 0.8)
+train <- training(split)
+test <- testing(split)
+```
+
+#### Linear Model
+
+```{r}
+lm_model <- linear_reg() %>%
+  set_engine("lm") %>%
+  fit(y ~ x1, data = train)
+
+lm_preds <- predict(lm_model, test) %>%
+  bind_cols(test) %>%
+  metrics(truth = y, estimate = .pred)
+
+lm_preds
+```
+
+#### KNN Model with Tuning
+
+```{r}
+knn_spec <- nearest_neighbor(neighbors = tune()) %>%
+  set_engine("kknn") %>%
+  set_mode("regression")
+
+knn_rec <- recipe(y ~ x1, data = train)
+
+knn_wf <- workflow() %>%
+  add_model(knn_spec) %>%
+  add_recipe(knn_rec)
+
+set.seed(123)
+cv_folds <- vfold_cv(train, v = 5)
+
+knn_grid <- grid_regular(neighbors(range = c(1, 30)), levels = 10)
+
+knn_tune <- tune_grid(knn_wf, resamples = cv_folds, grid = knn_grid)
+
+best_k <- select_best(knn_tune, metric = "rmse")
+
+knn_final <- finalize_workflow(knn_wf, best_k)
+
+knn_fit <- fit(knn_final, data = train)
+
+knn_preds <- predict(knn_fit, test) %>%
+  bind_cols(test) %>%
+  metrics(truth = y, estimate = .pred)
+
+knn_preds
+```
+
+---
+
+### Add Dimensions
+
+Now generate 30 random noise variables, progressively add them to the predictors, and re-fit both models.
+
+```{r}
+results <- tibble(p = integer(), model = character(), rmse = double())
+
+for (p in 0:30) {
+  if (p == 0) {
+    X <- tibble(x1 = x1)
+  } else {
+    noise <- replicate(p, runif(n))
+    X <- bind_cols(x1 = x1, as_tibble(noise))
+  }
+  df_p <- bind_cols(X, y = y)
+
+  split <- initial_split(df_p, prop = 0.8)
+  train <- training(split)
+  test <- testing(split)
+
+  # Linear model
+  lm_fit <- linear_reg() %>%
+    set_engine("lm") %>%
+    fit(y ~ ., data = train)
+
+  lm_rmse <- predict(lm_fit, test) %>%
+    bind_cols(test) %>%
+    metrics(truth = y, estimate = .pred) %>%
+    filter(.metric == "rmse") %>%
+    pull(.estimate)
+
+  # KNN model
+  rec <- recipe(y ~ ., data = train)
+  wf <- workflow() %>%
+    add_recipe(rec) %>%
+    add_model(nearest_neighbor(neighbors = best_k$neighbors) %>%
+                set_engine("kknn") %>%
+                set_mode("regression"))
+
+  knn_fit <- fit(wf, data = train)
+
+  knn_rmse <- predict(knn_fit, test) %>%
+    bind_cols(test) %>%
+    metrics(truth = y, estimate = .pred) %>%
+    filter(.metric == "rmse") %>%
+    pull(.estimate)
+
+  results <- results %>%
+    add_row(p = p, model = "Linear", rmse = lm_rmse) %>%
+    add_row(p = p, model = "KNN", rmse = knn_rmse)
+}
+```
+
+---
+
+### Is KNN Cursed?
+
+Plot the performance of both models as the number of predictors increases.
+
+```{r}
+results %>%
+  ggplot(aes(x = p, y = rmse, color = model)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Model Performance vs Number of Predictors",
+       x = "Number of Predictors",
+       y = "RMSE",
+       color = "Model") +
+  theme_minimal()
+```
+
+---
+
+### Conclusion
+
+- As we increase the number of irrelevant features, **KNN** performance degrades rapidly.
+- This is due to the **curse of dimensionality**: in high-dimensional space, distances between points become less meaningful.
+- **Linear regression** is more robust to noise in this case, especially with uncorrelated predictors.

@@ -1,0 +1,152 @@
+---
+title: "Comparison of Hyperparameter Tuning Strategies"
+format:
+  html:
+    self-contained: true
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    theme: minty
+    number-sections: false
+execute:
+  warning: false
+  message: false
+---
+
+## Support vector machines on Spam Dataset
+
+We use the **Spam dataset** for a binary classification task of identifying spam emails. The dataset is available in R via the `kernlab` package as `spam`.
+
+### Preprocessing
+
+We remove zero-variance predictors and normalize the features, which is critical for SVMs. The response variable is also ensured to be a factor.
+
+```{r}
+library(patchwork)
+library(tidymodels)
+library(kernlab)
+library(finetune)
+library(doParallel)
+library(ggplot2)
+
+data(spam)
+
+spam <- spam %>% mutate(type = as.factor(type))
+
+set.seed(123)
+spam_split <- initial_split(spam, prop = 0.8, strata = type)
+spam_train <- training(spam_split)
+spam_test <- testing(spam_split)
+
+spam_folds <- vfold_cv(spam_train, v = 3, strata = type)
+
+spam_recipe <- recipe(type ~ ., data = spam_train) %>%
+  step_zv(all_predictors()) %>%
+  step_normalize(all_predictors())
+```
+
+### Model Specification
+
+We use a radial basis function kernel SVM. The two main hyperparameters to tune are `cost` and `rbf_sigma`.
+
+```{r}
+svm_model <- svm_rbf(
+  cost = tune(),
+  rbf_sigma = tune()
+) %>%
+  set_engine("kernlab") %>%
+  set_mode("classification")
+
+svm_workflow <- workflow() %>%
+  add_model(svm_model) %>%
+  add_recipe(spam_recipe)
+```
+
+## Hyperparameter Tuning Strategies
+
+We compare **Grid Search**, **Random Search**, and **Bayesian Optimization** using the same number of parameter combinations.
+
+### Search Space
+
+```{r}
+grid_vals <- grid_regular(
+  cost(range = c(-2, 2)), 
+  rbf_sigma(range = c(-5, -1)), 
+  levels = 3
+)
+n_combinations <- nrow(grid_vals)
+```
+
+### Grid Search
+
+```{r}
+set.seed(123)
+grid_results <- tune_grid(
+  svm_workflow,
+  resamples = spam_folds,
+  grid = grid_vals,
+  metrics = metric_set(roc_auc),
+  control = control_grid(save_pred = TRUE)
+)
+```
+
+### Random Search
+
+```{r}
+set.seed(123)
+random_results <- tune_grid(
+  svm_workflow,
+  resamples = spam_folds,
+  grid = grid_random(cost(range = c(-1, 2)), rbf_sigma(range = c(-4, -1)), size = n_combinations),
+  metrics = metric_set(roc_auc),
+  control = control_grid(save_pred = TRUE)
+)
+```
+
+### Bayesian Optimization
+
+```{r}
+param_info <- parameters(svm_model) %>%
+  update(
+    cost = cost(range = c(-1, 2)),
+    rbf_sigma = rbf_sigma(range = c(-4, -1))
+  )
+
+set.seed(123)
+bayes_results <- tune_bayes(
+  svm_workflow,
+  resamples = spam_folds,
+  param_info = param_info,
+  initial = 5,
+  iter = n_combinations - 5,
+  metrics = metric_set(roc_auc),
+  control = control_bayes(save_pred = TRUE, verbose = TRUE)
+)
+```
+
+## Results Visualization
+
+We compare AUC performance in 2D: `cost` on x-axis, `rbf_sigma` on y-axis, AUC as color.
+
+```{r}
+plot_search <- function(results, title) {
+  results %>%
+    collect_metrics() %>%
+    filter(.metric == "roc_auc") %>%
+    ggplot(aes(x = cost, y = rbf_sigma, fill = mean)) +
+    geom_point(size = 4, shape = 21, color = "black") +
+    scale_x_log10() + scale_y_log10() +
+    labs(title = title, fill = "AUC") +
+    theme_minimal()
+}
+
+plot_search(grid_results, "Grid Search") +
+plot_search(random_results, "Random Search") +
+plot_search(bayes_results, "Bayesian Optimization")
+```
+
+### Conclusion
+
+This analysis compares three common hyperparameter tuning strategies applied to a binary classification SVM. Visual inspection shows differences in the exploration behavior and highlights the effectiveness of Bayesian optimization.

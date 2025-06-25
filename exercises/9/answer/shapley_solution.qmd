@@ -1,0 +1,100 @@
+---
+title: "Interpretability Methods"
+subtitle: "Computing Shapley Values"
+format: html
+code-fold: true
+code-tools: true
+embed-resources: true
+page-layout: full
+toc: true  
+toc-title: Tasks
+toc-location: left
+toc-expand: 2
+theme: minty
+---
+
+```{python}
+# Load required libraries
+import pandas as pd
+import numpy as np
+from sklearn.datasets import make_regression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+import shap
+import matplotlib.pyplot as plt
+
+# Generate a dataset with 3 features
+X, y = make_regression(n_samples=100, n_features=3, noise=0.1, random_state=42)
+feature_names = ["Feature_1", "Feature_2", "Feature_3"]
+X = pd.DataFrame(X, columns=feature_names)
+
+# Train-test split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Fit a model
+model = RandomForestRegressor(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)
+
+# Compute Shapley values using SHAP
+explainer = shap.Explainer(model.predict, X_train)
+shap_values = explainer(X_test.iloc[0:1])
+
+# Plot Shapley values for a single observation
+shap.plots.waterfall(shap_values[0])
+```
+
+## Approximate Shapley Values (Štrumbelj & Kononenko, 2014)
+
+```{python}
+from itertools import permutations
+
+def approximate_shapley(model, instance, background, feature_index, n_permutations=100):
+    baseline = background.mean().values.reshape(1, -1)
+    value = 0.0
+    features = list(range(instance.shape[1]))
+    features.remove(feature_index)
+
+    for _ in range(n_permutations):
+        perm = np.random.permutation(features)
+        subset = baseline.copy()
+        for i in perm:
+            subset[0, i] = instance[0, i]
+        fx1 = model.predict(subset)[0]
+
+        subset[0, feature_index] = instance[0, feature_index]
+        fx2 = model.predict(subset)[0]
+
+        value += fx2 - fx1
+
+    return value / n_permutations
+
+# Compute approximated Shapley values for the test instance
+approx_shap_values = []
+x_test_instance = X_test.iloc[0:1]
+for i in range(X.shape[1]):
+    approx_val = approximate_shapley(model, x_test_instance.values, X_train, i)
+    approx_shap_values.append(approx_val)
+
+# Display approximated Shapley values
+approx_shap_values
+```
+
+```{python}
+# Compare SHAP values with approximate values
+true_vals = shap_values.values[0]
+approx_vals = approx_shap_values
+
+df_compare = pd.DataFrame({
+    "Feature": feature_names,
+    "SHAP_Value": true_vals,
+    "Approx_Shapley": approx_vals
+})
+
+df_compare.plot(x="Feature", kind="bar")
+plt.title("SHAP vs Approximate Shapley Values")
+plt.ylabel("Value")
+plt.xticks(rotation=0)
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+```

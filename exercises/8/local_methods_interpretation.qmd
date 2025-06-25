@@ -1,0 +1,37 @@
+---
+title: "Interpretability  methods"
+subtitle: "model agnostic local methods"
+format: html
+code-fold: true
+code-tools: true
+embed-resources: true
+page-layout: full
+toc: true  
+toc-title: tasks
+toc-location: left
+toc-expand: 2
+theme: minty
+knitr:
+  opts_chunk: 
+    collapse: true
+    R.options:
+    message: false
+    warning: false
+    code-fold: false
+---
+
+
+
+### Regression problem
+
+- Pick up a dataset with a quantitative response
+
+ - avalilable datasets can be found in `modeldata`,  ` ISLR2`, `MASS`, `mlbench`. You can check the list of datasets using `data(package = "modeldata")` or `data(package = "ISLR2")` etc.
+
+- run the learning flow using a linear model, a single tree and an ensemble model.
+
+- select one observation, a continuous feature and create a `ceteris paribus`  plot for the selected observation and for each fitted model. What insights can you get from the plots?
+
+- use the previous code and produce the `ICE` plot for the ensemble model.
+
+- produce a `LIME` plot. Use the `lime` package. You can use the `explain()` function to create the LIME plot. The `explain()` function takes a model, a dataset, and a new observation as input and returns a LIME explanation object. You can then use the `plot_features()` function to visualize the LIME explanation. 

@@ -1,0 +1,345 @@
+---
+title: "linear regression: back-to-back base vs tidy"
+format: html
+code-fold: true
+code-tools: true
+embed-resources: true
+page-layout: full
+toc: true
+toc-title: quick tasks
+toc-location: left
+toc-expand: 2
+theme: minty
+knitr:
+  opts_chunk: 
+    collapse: true
+    message: false
+    warning: false
+    echo: true
+    code-fold: true
+---
+
+## initialization
+
+```{r}
+#| code-fold: false
+library(tidyverse)
+library(tidymodels)
+library(ISLR2)
+library(car)
+library(broom)
+```
+
+## basic analysis
+
+### task 1
+
+```{r}
+data(Carseats)
+head(Carseats)
+?Carseats
+```
+
+### task 2
+
+::: {.panel-tabset}
+
+#### Base R
+
+```{r}
+set.seed(123)
+n <- nrow(Carseats)
+train_idx <- sample(1:n, size = 0.7 * n)
+train <- Carseats[train_idx, ]
+test <- Carseats[-train_idx, ]
+model_base <- lm(Sales ~ Price + Urban, data = train)
+```
+
+#### Tidymodels
+
+```{r}
+set.seed(123)
+data_split <- initial_split(Carseats, prop = 0.7)
+train_tidy <- training(data_split)
+test_tidy <- testing(data_split)
+
+model_spec <- linear_reg() %>% 
+  set_engine("lm")
+
+recipe_model <- recipe(Sales ~ Price + Urban, data = train_tidy)
+
+workflow_model <- workflow() %>% 
+  add_model(model_spec) %>% 
+  add_recipe(recipe_model)
+
+fit_tidy <- workflow_model %>% 
+  fit(data = train_tidy)
+```
+
+:::
+
+### task 3
+
+::: {.panel-tabset}
+
+#### Base R
+
+```{r}
+summary(model_base)
+```
+
+#### Tidymodels
+
+```{r}
+tidy(fit_tidy)
+glance(fit_tidy)
+```
+
+:::
+
+### task 4
+
+::: {.panel-tabset}
+
+#### Base R
+
+```{r}
+model_full_base <- lm(Sales ~ ., data = train)
+summary(model_full_base)
+```
+
+#### Tidymodels
+
+```{r}
+recipe_full <- recipe(Sales ~ ., data = train_tidy)
+workflow_full <- workflow_model %>% 
+  update_recipe(recipe_full)
+
+fit_full_tidy <- workflow_full %>% 
+  fit(data = train_tidy)
+
+fit_full_tidy %>% tidy()
+```
+
+:::
+
+### task 5
+
+::: {.panel-tabset}
+
+#### Base R
+
+```{r}
+rsq <- c()
+adj_rsq <- c()
+models <- list()
+current <- model_full_base
+max_steps <- 5
+step <- 0
+
+while(TRUE) {
+  if (step >= max_steps) break
+  coefs <- summary(current)$coefficients
+  if (nrow(coefs) <= 2) break
+  pvals <- coefs[-1, 4]
+  if (all(pvals < 0.05)) break
+  worst <- names(which.max(pvals))
+  f <- formula(current)
+  predictors <- setdiff(all.vars(f)[-1], worst)
+  if (length(predictors) == 0) break
+  f <- as.formula(paste("Sales ~", paste(predictors, collapse = "+")))
+  current <- lm(f, data = train)
+  models <- c(models, list(current))
+  rsq <- c(rsq, summary(current)$r.squared)
+  adj_rsq <- c(adj_rsq, summary(current)$adj.r.squared)
+  step <- step + 1
+}
+plot(rsq, type = "b", ylim = c(min(adj_rsq), max(rsq)), ylab = "R-squared", xlab = "Step")
+lines(adj_rsq, type = "b", col = "red")
+```
+
+#### Tidymodels
+
+```{r}
+# Skipped for tidy because tidymodels doesn't support manual backward selection easily
+```
+
+:::
+
+### task 6
+
+::: {.panel-tabset}
+
+#### Base R
+
+```{r}
+pred_full <- predict(model_full_base, newdata = test)
+rmse_full <- sqrt(mean((test$Sales - pred_full)^2))
+rmse_reduced <- sqrt(mean((test$Sales - predict(current, newdata = test))^2))
+rmse_full
+rmse_reduced
+```
+
+#### Tidymodels
+
+```{r}
+predict(fit_full_tidy, test_tidy) %>%
+  bind_cols(test_tidy) %>%
+  metrics(truth = Sales, estimate = .pred) %>%
+  filter(.metric == "rmse")
+```
+
+:::
+
+### task 7
+
+::: {.panel-tabset}
+
+#### Base R
+
+```{r}
+vif(model_full_base)
+```
+
+#### Tidymodels
+
+```{r}
+# tidymodels does not have native VIF support
+```
+
+:::
+
+### task 8
+
+::: {.panel-tabset}
+
+#### Base R
+
+```{r}
+train_std <- train
+num_vars <- sapply(train_std, is.numeric)
+train_std[num_vars] <- scale(train_std[num_vars])
+model_std <- lm(Sales ~ ., data = train_std)
+summary(model_std)
+```
+
+#### Tidymodels
+
+```{r}
+recipe_norm <- recipe(Sales ~ ., data = train_tidy) %>%
+  step_normalize(all_numeric_predictors())
+
+workflow_norm <- workflow_model %>% 
+  update_recipe(recipe_norm)
+
+fit_norm <- workflow_norm %>% fit(data = train_tidy)
+
+tidy(fit_norm)
+```
+
+:::
+
+### task 9
+
+::: {.panel-tabset}
+
+#### Base R
+
+```{r}
+plot(model_full_base, which = 1:2)
+```
+
+#### Tidymodels
+
+```{r}
+lm_model <- extract_fit_parsnip(fit_full_tidy)
+
+augmented <- test_tidy %>%
+  mutate(.fitted = predict(lm_model, new_data = test_tidy)$.pred,
+         .resid = Sales - .fitted)
+
+ggplot(augmented, aes(.fitted, .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = "Residuals vs Fitted", x = "Fitted", y = "Residuals") +
+  theme_minimal()
+
+ggplot(augmented, aes(sample = .resid)) +
+  stat_qq() + stat_qq_line() +
+  labs(title = "QQ Plot of Residuals") +
+  theme_minimal()
+```
+
+:::
+
+## cross-validation and tuning
+
+### task 10
+
+::: {.panel-tabset}
+
+#### Base R
+
+```{r}
+# base R doesn't directly support CV object creation like tidymodels
+```
+
+#### Tidymodels
+
+```{r}
+cv_folds <- vfold_cv(train_tidy, v = 5)
+```
+
+:::
+
+### task 11–14
+
+```{r}
+# Polynomial model tuning
+poly_recipe <- recipe(Sales ~ Price, data = train_tidy) %>%
+  step_poly(Price, degree = tune())
+
+poly_spec <- linear_reg() %>% set_engine("lm")
+
+poly_wf <- workflow() %>%
+  add_recipe(poly_recipe) %>%
+  add_model(poly_spec)
+
+grid <- tibble(degree = 1:5)
+
+tune_res <- tune_grid(poly_wf, resamples = cv_folds, grid = grid, metrics = metric_set(rmse))
+collect_metrics(tune_res)
+
+# Finalize polynomial model
+best_deg <- select_best(tune_res, metric = "rmse")
+final_poly <- finalize_workflow(poly_wf, best_deg)
+final_fit <- final_poly %>% fit(data = train_tidy)
+
+predict(final_fit, test_tidy) %>%
+  bind_cols(test_tidy) %>%
+  metrics(truth = Sales, estimate = .pred)
+
+# KNN tuning
+knn_spec <- nearest_neighbor(neighbors = tune()) %>%
+  set_engine("kknn") %>%
+  set_mode("regression")
+
+knn_recipe <- recipe(Sales ~ Price, data = train_tidy)
+
+knn_wf <- workflow() %>%
+  add_recipe(knn_recipe) %>%
+  add_model(knn_spec)
+
+knn_grid <- tibble(neighbors = seq(1, 25, by = 2))
+
+knn_tune <- tune_grid(knn_wf, resamples = cv_folds, grid = knn_grid, metrics = metric_set(rmse))
+collect_metrics(knn_tune)
+
+best_knn <- select_best(knn_tune, metric = "rmse")
+final_knn <- finalize_workflow(knn_wf, best_knn)
+fit_knn <- final_knn %>% fit(data = train_tidy)
+
+predict(fit_knn, test_tidy) %>%
+  bind_cols(test_tidy) %>%
+  metrics(truth = Sales, estimate = .pred)
+```

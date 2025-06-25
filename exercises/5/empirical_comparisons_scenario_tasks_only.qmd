@@ -1,0 +1,170 @@
+---
+title: "Classification"
+subtitle: "a comparative review of basic classifiers: tasks"
+format: html
+code-fold: true
+code-tools: true
+embed-resources: true
+page-layout: full
+toc: true
+toc-title: tasks
+toc-location: left
+toc-expand: 2
+theme: minty
+knitr:
+  opts_chunk: 
+    collapse: true
+    R.options:
+    message: false
+    warning: false
+    code-fold: false
+---
+
+
+
+
+
+```{r,warning=FALSE,message=FALSE}
+library("mvtnorm")
+library("tidyverse")
+library("tidymodels")
+library("discrim")
+library("kableExtra")
+library("kknn")
+```
+
+### Data generation
+
+#### Scenario 1
+The two classes have the  20 observations each; the predictors are generated from a multivariate normal distribution, with parameters
+$$
+{\bf \mu}_{1}=\begin{bmatrix}
+1.25\\
+1
+\end{bmatrix},
+{\bf\Sigma}_1=\begin{bmatrix}
+1 & 0\\
+0 & 1\\
+\end{bmatrix}, \ n_1=20
+\text{ and }
+{\bf \mu}_{2}=\begin{bmatrix}
+1\\
+1.25
+\end{bmatrix},
+{\bf\Sigma}_2=\begin{bmatrix}
+1 & 0\\
+0 & 1\\
+\end{bmatrix},\ n_2=20
+$$
+
+
+#### Scenario 2
+
+The two classes have the  20 observations each; the predictors are generated from a multivariate normal distribution, with parameters
+$$
+{\bf \mu}_{1}=
+\begin{bmatrix}
+1.25\\
+1
+\end{bmatrix},
+{\bf\Sigma}_1=\begin{bmatrix}
+2 & -.5\\
+-.5 & 2\\
+\end{bmatrix}, \ n_1=20
+\text{ and }
+{\bf \mu}_{2}=\begin{bmatrix}
+1\\
+1.25
+\end{bmatrix},
+{\bf\Sigma}_2=\begin{bmatrix}
+2 & -.5\\
+-.5 & 2\\
+\end{bmatrix},\ n_2=20
+$$
+
+
+#### Scenario 3
+The two classes have the  50 observations each; the predictors are generated from a Student t-distribution with the same covariance structure as before
+
+#### Scenario 4
+The two classes have the  20 observations each; the predictors are generated from a multivariate normal distribution, with parameters
+$$
+{\bf \mu}_{1}=
+\begin{bmatrix}
+1.25\\
+1
+\end{bmatrix},
+{\bf\Sigma}_1=\begin{bmatrix}
+1 & .5\\
+.5 & 1\\
+\end{bmatrix}, \ n_1=20
+\text{ and }
+{\bf \mu}_{2}=\begin{bmatrix}
+1\\
+1.25
+\end{bmatrix},
+{\bf\Sigma}_2=\begin{bmatrix}
+1 & -.5\\
+-.5 & 1\\
+\end{bmatrix},\ n_2=20
+$$
+
+#### Scenario 5
+
+The response is linked to the predictors as follows 
+$$ P(y=1|X_{1},X_{2})=\frac{e^{0.1X_{1}- X_{2}+2X_{1}X_{2}+0.5X_{2}}}{1+e^{0.1X_{1}- X_{2}+2X_{1}X_{2}+0.5X_{2}}}$$
+the 50 observations of $X_{1}$ and $X_{2}$ are generated via a multivariate normal with parameters
+
+$$
+{\bf \mu}=
+\begin{bmatrix}
+0\\
+0
+\end{bmatrix},
+{\bf\Sigma}=\begin{bmatrix}
+1 & 0\\
+0 & 1\\
+\end{bmatrix}
+$$
+
+#### Scenario 6
+
+The training set size is limited to 6 observations for each class, with the predictors $X_{1}$ and  $X_{2}$ being components
+of the distribution with parameters
+
+$$
+{\bf \mu}_{1}=
+\begin{bmatrix}
+1.25\\
+1
+\end{bmatrix}, \
+{\bf\Sigma}_{1}=\begin{bmatrix}
+5 & 0\\
+0 & 2\\
+\end{bmatrix} \ \text{ and } \ 
+{\bf \mu}_{2}=
+\begin{bmatrix}
+1\\
+1.25
+\end{bmatrix}, \
+{\bf\Sigma}_{2}=\begin{bmatrix}
+1 & 0\\
+0 & 4\\
+\end{bmatrix}
+$$
+
+
+
+- Generate, for each scenario, 100 training set
+
+- Generate, for each scenario, 1000 test observations
+
+### Model fitting and comparison
+
+- Use **logistic regression**, **LDA**, **QDA**, **KNN-1** (1 neighbour), **KNN-cv** (number of neighbors tuned via cross-validation), **naive bayes** to build classifiers on the training sets of each scenario
+
+- Measure the accuracy of each trained classifier on the test observations
+
+- Create a comparative plot for each scenario, depicting the performance of the considered methods.
+
+

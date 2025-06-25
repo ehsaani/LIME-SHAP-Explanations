@@ -1,0 +1,36 @@
+---
+title: "Interpretability  methods"
+subtitle: "computing shapley values"
+format: html
+code-fold: true
+code-tools: true
+embed-resources: true
+page-layout: full
+toc: true  
+toc-title: tasks
+toc-location: left
+toc-expand: 2
+theme: minty
+knitr:
+  opts_chunk: 
+    collapse: true
+    R.options:
+    message: false
+    warning: false
+    code-fold: false
+---
+
+
+- fit a model on a dataset with one response and 3 features.
+
+- pick up a single feature as a reference
+
+- select a test observation and compute the shapley value for your feature of choice.
+
+- repeat the process for each feature in the dataset.
+
+- plot the shapley values for each feature.
+
+- try to implement the Štrumbelj and Kononenko (2014) approximation to the shapley values computation,
+check the differences.
+

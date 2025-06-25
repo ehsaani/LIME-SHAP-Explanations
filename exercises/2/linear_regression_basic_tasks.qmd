@@ -1,0 +1,262 @@
+---
+title: "linear regression: back-to-back base vs tidy"
+format: html
+code-fold: true
+code-tools: true
+embed-resources: true
+page-layout: full
+toc: true
+toc-title: quick tasks
+toc-location: left
+toc-expand: 2
+theme: minty
+knitr:
+  opts_chunk: 
+    collapse: true
+    R.options:
+    message: false
+    warning: false
+    code-fold: true
+    echo: true
+---
+
+## initialization
+
+```{r}
+#| code-fold: false
+library(tidyverse)
+library(tidymodels)
+library(ISLR2)
+library(car)
+```
+
+### basic analysis
+
+#### task 1
+
+load the `Carseats` dataset from the `ISLR2` package, print the first few lines. Have a look at the help `?Carseats` to find out more about the variables.    
+
+```{r}
+# write your code here
+```
+
+
+#### task 2
+
+Fit a regression model of `Sales` as function of `Price` and `Urban`. 
+Use  `70%` of observation for training.
+
+[base]{style="color:dodgerblue;"} 
+
+```{r}
+# write your code here
+```
+
+[tidy]{style="color:indianred;"}  
+
+```{r}
+# write your code here
+```
+
+
+#### task 3
+
+Print the base output of the model.
+
+- coefficient fit (how do you interpret $\hat{\beta}_{Price}$? and $\hat{\beta}_{UrbanYes}$?)
+
+- goodness of fit
+
+[base]{style="color:dodgerblue;"} 
+
+```{r}
+# write your code here
+```
+
+[tidy]{style="color:indianred;"}   
+
+```{r}
+# write your code here
+```
+
+
+#### task 4
+
+This time use all the available predictors to predict  `Sales`. Use the same training set as before. 
+
+[base]{style="color:dodgerblue;"} 
+
+```{r}
+# write your code here
+```
+
+[tidy]{style="color:indianred;"}   
+
+```{r}
+# write your code here
+```
+
+#### task 5
+
+Remove the predictors with large `p-value`: plot the change in the  $R^2$? and adjusted $R^2$ as you remove the predictors with large p-value. (this is a home-made backward selection). Pick the model with the best $R^2_{adj}$.
+
+[base]{style="color:dodgerblue;"} 
+
+```{r}
+# write your code here
+```
+
+[tidy]{style="color:indianred;"}   
+
+```{r}
+# write your code here
+```
+
+#### task 6
+
+Compute the`rmse` test for both the full model and the reduced model. Which one is better?
+
+[base]{style="color:dodgerblue;"} 
+
+```{r}
+# write your code here
+```
+
+[tidy]{style="color:indianred;"}   
+
+```{r}
+# write your code here
+```
+
+#### task 7
+
+check the predictors for multicollinearity using the variance inflation factor (use `car::vif`)
+
+[base]{style="color:dodgerblue;"} 
+
+```{r}
+# write your code here
+```
+
+[tidy]{style="color:indianred;"}   
+
+```{r}
+# write your code here
+```
+
+#### task 8
+
+standardize the quantitative predictors. How do the coefficient change? (in `tydimodels`, use  `step_normalize()`)
+
+[base]{style="color:dodgerblue;"} 
+
+```{r}
+# write your code here
+```
+
+[tidy]{style="color:indianred;"}   
+
+```{r}
+# write your code here
+```
+
+
+
+#### task 9
+
+create a QQplot, and the residuals vs fitted values plot.
+
+[base]{style="color:dodgerblue;"} 
+
+```{r}
+# write your code here
+```
+
+[tidy]{style="color:indianred;"}   
+
+```{r}
+# write your code here
+```
+
+## cross-validation and tuning
+
+#### task 10
+
+Create 5 folds off of the training set.
+
+[base]{style="color:dodgerblue;"} 
+
+```{r}
+# write your code here
+```
+
+[tidy]{style="color:indianred;"}   
+
+```{r}
+# write your code here
+```
+
+
+#### task 11
+
+fit a polynomial regression model of `Sales` as function of `Price`: tune-up the degree of the polynomial estimating the test `rmse`  via cross-validation.
+
+[base]{style="color:dodgerblue;"} 
+
+```{r}
+# write your code here
+```
+
+[tidy]{style="color:indianred;"}   
+
+```{r}
+# write your code here
+```
+
+#### task 12
+
+fit the polynomial regression model of `Sales` as function of `Price` using the best degree found in the previous task. Assess its performance on the test set.
+
+[base]{style="color:dodgerblue;"} 
+
+```{r}
+# write your code here
+```
+
+[tidy]{style="color:indianred;"}   
+
+```{r}
+# write your code here
+```
+
+
+#### task 13
+
+do the same using nearest neighbors regression. Tune the number of neighbors.
+
+[base]{style="color:dodgerblue;"} 
+
+```{r}
+# write your code here
+```
+
+[tidy]{style="color:indianred;"}   
+
+```{r}
+# write your code here
+```
+
+
+#### task 14
+
+select the model that provides the best performance on the test set.
+
+```{r}
+# write your code here
+```
+
+[tidy]{style="color:indianred;"}   
+
+```{r}
+# write your code here
+```

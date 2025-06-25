@@ -1,0 +1,726 @@
+---
+title: "Customer Churn Analysis and Prediction"
+author: "Mohammad_Ehsani"
+format: 
+  html:
+    theme: minty
+    code-fold: true
+    code-tools: true
+    embed-resources: true
+    page-layout: full
+    toc: true
+    toc-title: "Tasks"
+    toc-location: left
+    toc-expand: 2
+knitr:
+  opts_chunk:
+    collapse: true
+    message: false
+    warning: false
+    code-fold: false
+---
+
+```{r setup, include=FALSE}
+# Load required libraries
+library(tidyverse)
+library(tidymodels)
+library(skimr)
+library(janitor)
+library(vip)
+library(iml)
+library(pdp)
+library(lime)
+library(workflowsets)
+library(knitr)
+library(ggplot2)
+library(dplyr)
+library(RColorBrewer)
+library(patchwork)
+library(gridExtra)
+library(ranger)
+library(caret)
+library(kernlab)
+library(pROC)
+```
+
+# Project Objective
+
+Analyze and predict customer churn using a structured machine learning workflow. Compare multiple models (linear, ensemble, and SVM) for both performance and interpretability.
+
+# Load Dataset
+
+```{r}
+# Read the dataset
+df <- read.csv("dataset/Databel - Data.csv")
+```
+
+# Dataset Dimensions
+
+```{r}
+# Display number of rows and columns
+dim(df)
+```
+
+# Dataset Overview
+
+```{r}
+# Summary statistics
+skim(df)
+```
+
+```{r}
+# Structure and data types
+str(df)
+```
+
+# Data Preprocessing
+
+```{r}
+# Clean column names (convert to lowercase and use underscores)
+df <- clean_names(df)
+```
+
+# Missing Value Analysis
+
+```{r}
+# Custom function to detect missing values (including "NA" as string, empty string, or space)
+missing_check <- function(x) {
+  sum(is.na(x) | x == "" | x == " " | x == "NA")
+}
+
+# Build summary table of missing values
+missing_summary <- data.frame(
+  Column = names(df),
+  Custom_Missing_Count = sapply(df, missing_check),
+  Total_Records = nrow(df),
+  Missing_Percent = round(sapply(df, missing_check) / nrow(df) * 100, 2)
+)
+
+# Filter only columns with missing values
+missing_summary <- missing_summary[missing_summary$Custom_Missing_Count > 0, ]
+
+# Display the missing value summary
+print(missing_summary)
+```
+
+# Visualizing Missing Values
+
+```{r Pie_Chart_for_missing_values, fig.width=12, fig.height=6}
+# Function to prepare pie chart data for missing vs. present values
+prepare_pie_data <- function(column_name) {
+  row <- missing_summary %>% filter(Column == column_name)
+  data.frame(
+    Status = c("Missing", "Present"),
+    Percent = c(row$Missing_Percent, 100 - row$Missing_Percent)
+  ) %>%
+    mutate(Label = paste0(Status, ": ", round(Percent, 1), "%"))
+}
+
+# Prepare pie chart data for 'churn_category' and 'churn_reason'
+data_category <- prepare_pie_data("churn_category")
+data_reason <- prepare_pie_data("churn_reason")
+
+# Pie chart for 'churn_category'
+p1 <- ggplot(data_category, aes(x = "", y = Percent, fill = Status)) +
+  geom_col(width = 1) +
+  coord_polar(theta = "y") +
+  geom_text(aes(label = Label), position = position_stack(vjust = 0.5)) +
+  scale_fill_manual(values = c("Missing" = "#D55E00", "Present" = "#56B4E9")) +
+  labs(title = "Churn Category: Missing vs Present") +
+  theme_void() + theme(legend.position = "none")
+
+# Pie chart for 'churn_reason'
+p2 <- ggplot(data_reason, aes(x = "", y = Percent, fill = Status)) +
+  geom_col(width = 1) +
+  coord_polar(theta = "y") +
+  geom_text(aes(label = Label), position = position_stack(vjust = 0.5)) +
+  scale_fill_manual(values = c("Missing" = "#D55E00", "Present" = "#56B4E9")) +
+  labs(title = "Churn Reason: Missing vs Present") +
+  theme_void() + theme(legend.position = "none")
+
+# Arrange charts side by side
+grid.arrange(p1, p2, ncol = 2)
+```
+
+# Categorical Variable Summary
+
+```{r}
+# Select character or factor columns
+cat_df <- df %>% select(where(~ is.character(.x) || is.factor(.x)))
+
+# Build summary table for categorical features
+cat_summary <- cat_df %>%
+  summarise(across(everything(), list(
+    count = ~ sum(!is.na(.)),
+    unique = ~ n_distinct(.),
+    top = ~ names(sort(table(.), decreasing = TRUE)[1]),
+    freq = ~ max(table(.))
+  ), .names = "{.col}_{.fn}"))
+
+# Reshape into readable format
+summary_table <- tibble(
+  Column = names(cat_df),
+  count = as.numeric(cat_summary[1, seq(1, ncol(cat_summary), 4)]),
+  unique = as.numeric(cat_summary[1, seq(2, ncol(cat_summary), 4)]),
+  top = as.character(cat_summary[1, seq(3, ncol(cat_summary), 4)]),
+  freq = as.numeric(cat_summary[1, seq(4, ncol(cat_summary), 4)])
+)
+
+# View summary
+print(summary_table)
+```
+
+# Churn Summary
+
+```{r}
+# Total number of unique customers
+total_customers <- n_distinct(df$customer_id)
+
+# Total churned customers (assuming "Yes" = churned)
+total_churned <- sum(df$churn_label == "Yes", na.rm = TRUE)
+
+# Churn rate
+churn_rate <- round((total_churned / total_customers) * 100, 2)
+
+# Output
+cat("Total Number of Customers:", total_customers, "\n")
+cat("Total Number of Churned Customers:", total_churned, "\n")
+cat("Rate of Churned Customers:", churn_rate, "%\n")
+```
+
+# Top Churn Reasons
+
+```{r}
+# Filter only churned customers
+churned <- df %>%
+  filter(churn_label == "Yes") %>%
+  select(churn_reason, churn_category)
+
+# Count churn reasons and sort
+churn_reason_summary <- churned %>%
+  count(churn_reason, name = "count") %>%
+  arrange(desc(count))
+
+# Show top 5 churn reasons
+head(churn_reason_summary, 5)
+```
+
+# Churn Reason Distribution (Bar Plot)
+
+```{r Count_of_All_Churn_Reasons, fig.width=12, fig.height=6}
+# Replace missing/blank churn reasons with "Unknown"
+df$churn_reason <- ifelse(is.na(df$churn_reason) | trimws(df$churn_reason) == "", "Unknown", df$churn_reason)
+
+# Count reasons for churned customers
+churn_reason_filtered <- df %>%
+  filter(churn_label == "Yes") %>%
+  count(churn_reason, name = "count") %>%
+  arrange(desc(count))
+
+# Plot bar chart
+ggplot(churn_reason_filtered, aes(x = count, y = reorder(churn_reason, count), fill = count)) +
+  geom_bar(stat = "identity") +
+  scale_fill_viridis_c(option = "plasma", direction = -1) +
+  labs(
+    title = "Count of All Churn Reasons",
+    x = "Count",
+    y = "Churn Reason"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    axis.title = element_text(face = "bold", size = 13),
+    legend.position = "none"
+  )
+```
+
+# Churn vs. Retention by Account Length
+
+```{r}
+# Churned customers grouped by account length
+churned <- df %>%
+  filter(churn_label == "Yes") %>%
+  group_by(account_length_in_months) %>%
+  summarise(Churned = n(), .groups = "drop")
+
+# Retained customers grouped by account length
+retained <- df %>%
+  filter(churn_label == "No") %>%
+  group_by(account_length_in_months) %>%
+  summarise(Not_Churned = n(), .groups = "drop")
+
+# Merge churned and retained summaries
+merged_df <- inner_join(churned, retained, by = "account_length_in_months")
+
+# Display table
+kable(
+  head(merged_df, 10),
+  caption = "Churned vs Not Churned by Account Length (in months)",
+  col.names = c("Account Length (in months)", "Churned", "Not Churned")
+)
+```
+
+# Line Plot: Churn by Account Length
+
+```{r exact-lineplot-account-length, fig.width=12, fig.height=6}
+# Rename column for clarity
+colnames(merged_df)[1] <- "Account.Length"
+
+# Convert to long format
+merged_long <- merged_df %>%
+  pivot_longer(cols = c("Churned", "Not_Churned"),
+               names_to = "Status", values_to = "Count")
+
+# Line plot
+ggplot(merged_long, aes(x = Account.Length, y = Count, color = Status, linetype = Status)) +
+  geom_line(size = 1.2) +
+  scale_color_manual(values = c("Churned" = "red", "Not_Churned" = "blue")) +
+  scale_linetype_manual(values = c("Churned" = "dashed", "Not_Churned" = "solid")) +
+  labs(
+    title = "Churned vs Retained Customers by Account Length",
+    x = "Account Length (in months)",
+    y = "Number of Customers"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(face = "bold", size = 13),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12),
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  )
+```
+
+# Churn Category Pie Chart
+
+```{r}
+# Step 1: Prepare data (only churned customers with category info)
+churn_category_data <- df %>%
+  filter(churn_label == "Yes", !is.na(churn_category)) %>%
+  count(churn_category, name = "count") %>%
+  mutate(
+    percent = round(count / sum(count) * 100, 1),
+    label = paste0(churn_category, "\n", percent, "%")
+  )
+
+# Step 2: Define accessible color palette
+n_categories <- nrow(churn_category_data)
+color_palette <- brewer.pal(n = n_categories, name = "Set2")
+
+# Step 3: Pie chart
+ggplot(churn_category_data, aes(x = "", y = count, fill = churn_category)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar("y", start = pi/3) +
+  geom_text(aes(label = paste0(percent, "%")), 
+            position = position_stack(vjust = 0.5), 
+            fontface = "bold", size = 4) +
+  scale_fill_manual(values = color_palette) +
+  theme_void() +
+  labs(title = "Churn Categories") +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    legend.title = element_blank(),
+    legend.position = "right"
+  )
+```
+
+# Churn Distribution
+
+```{r}
+# Convert to factor
+df$churn_label <- factor(df$churn_label, levels = c("No", "Yes"))
+
+# Plot churn distribution
+ggplot(df, aes(x = churn_label)) +
+  geom_bar(fill = "#D55E00") +
+  labs(title = "Churn Distribution", x = "Churn Label", y = "Count")
+```
+
+# Churn Count by Contract Type
+
+```{r}
+ggplot(df, aes(x = contract_type, fill = churn_label)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Churn Count by Contract Type", x = "Contract Type", y = "Count") +
+  scale_fill_manual(values = c("#56B4E9", "#D55E00")) +
+  theme(axis.text.x = element_text(angle = 15, hjust = 1))
+```
+
+# Monthly Charges by Churn Status (Boxplot)
+
+```{r}
+ggplot(df, aes(x = churn_label, y = monthly_charge, fill = churn_label)) +
+  geom_boxplot() +
+  labs(title = "Monthly Charges by Churn Status", x = "Churn Label", y = "Monthly Charge") +
+  scale_fill_manual(values = c("#56B4E9", "#D55E00"))
+```
+
+# Churn by International Plan
+
+```{r}
+ggplot(df, aes(x = intl_plan, fill = churn_label)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Churn by International Plan", x = "International Plan", y = "Count") +
+  scale_fill_manual(values = c("#56B4E9", "#D55E00"))
+```
+
+# Avg Monthly GB Download by Contract Type
+
+```{r}
+df %>%
+  group_by(contract_type) %>%
+  summarise(avg_monthly_gb_download = mean(avg_monthly_gb_download, na.rm = TRUE)) %>%
+  arrange(desc(avg_monthly_gb_download))
+```
+
+# View Sample Data
+
+```{r}
+head(df, 5)
+```
+
+# Drop Unused Columns
+
+```{r}
+# Drop columns not needed for modeling
+df1 <- df[, !names(df) %in% c("customer_id", "churn_category", "churn_reason", "state", "phone_number")]
+
+# Preview
+head(df1, 5)
+```
+
+# Data Splitting and Label Encoding
+
+```{r}
+# Convert target to factor
+df1$churn_label <- as.factor(df1$churn_label)
+
+# Split into train/test sets with stratification
+set.seed(123)
+train_index <- createDataPartition(df1$churn_label, p = 0.8, list = FALSE)
+
+train <- df1[train_index, ]
+test <- df1[-train_index, ]
+
+# Check class distribution
+str(train$churn_label)
+table(train$churn_label)
+```
+
+# Recheck Data Preview
+
+```{r}
+head(df1, 5)
+```
+
+# Preprocessing Recipe (One-Hot Encoding & Scaling)
+
+```{r}
+# Step 1: Define recipe
+rec <- recipe(churn_label ~ ., data = train) %>%
+  step_dummy(all_nominal_predictors(), one_hot = TRUE) %>%
+  step_center(all_numeric_predictors()) %>%
+  step_scale(all_numeric_predictors())
+
+# Step 2: Fit recipe to training data
+prep_rec <- prep(rec, training = train)
+
+# Step 3: Transform both training and test sets
+train_processed <- bake(prep_rec, new_data = train)
+test_processed <- bake(prep_rec, new_data = test)
+
+# Step 4: Glimpse processed data
+glimpse(train_processed)
+```
+
+# 1. Cross-Validation Folds
+
+```{r}
+set.seed(123)
+folds <- vfold_cv(train_processed, v = 5, strata = churn_label)
+```
+
+# 2. Model Specifications
+
+```{r}
+# Logistic Regression
+log_model <- logistic_reg(penalty = tune(), mixture = tune()) %>%
+  set_engine("glmnet") %>%
+  set_mode("classification")
+
+# SVM
+svm_model <- svm_rbf(cost = tune(), rbf_sigma = tune()) %>%
+  set_engine("kernlab") %>%
+  set_mode("classification")
+
+# Random Forest
+rf_model <- rand_forest(mtry = tune(), trees = 500, min_n = tune()) %>%
+  set_engine("ranger", importance = "impurity") %>%
+  set_mode("classification")
+```
+
+# 3. Workflows
+
+```{r}
+# Define workflows
+wf_log <- workflow() %>% add_model(log_model) %>% add_formula(churn_label ~ .)
+wf_svm <- workflow() %>% add_model(svm_model) %>% add_formula(churn_label ~ .)
+wf_rf  <- workflow() %>% add_model(rf_model)  %>% add_formula(churn_label ~ .)
+```
+
+# 4. Tuning Grids
+
+```{r}
+# Logistic Regression
+log_grid <- grid_regular(penalty(), mixture(), levels = 5)
+
+# SVM
+svm_grid <- grid_regular(cost(), rbf_sigma(), levels = 5)
+
+# Random Forest
+mtry_range <- finalize(mtry(), train_processed %>% select(-churn_label))
+rf_params <- parameters(mtry_range, min_n())
+rf_grid <- grid_random(rf_params, size = 10)
+```
+
+> **Why ROC AUC over Accuracy?**  
+> ROC AUC is more appropriate for imbalanced datasets. With ~27% churn rate, accuracy is misleading. A model that predicts “No churn” for all would still get ~73% accuracy, but zero utility in identifying churners. AUC evaluates ranking quality and is better for retention targeting.
+
+# 5. Tune Models
+
+```{r}
+# Logistic Regression
+log_tuned <- tune_grid(
+  wf_log,
+  resamples = folds,
+  grid = log_grid,
+  metrics = metric_set(roc_auc)
+)
+
+# SVM
+svm_tuned <- tune_grid(
+  wf_svm,
+  resamples = folds,
+  grid = svm_grid,
+  metrics = metric_set(roc_auc)
+)
+
+# Random Forest
+rf_tuned <- tune_grid(
+  wf_rf,
+  resamples = folds,
+  grid = rf_grid,
+  metrics = metric_set(roc_auc)
+)
+```
+
+# 6. Compare & Select Best Models
+
+```{r}
+# Top results
+show_best(log_tuned, metric = "roc_auc")
+show_best(svm_tuned, metric = "roc_auc")
+show_best(rf_tuned,  metric = "roc_auc")
+
+# Select best configurations
+log_best <- select_best(log_tuned, metric = "roc_auc")
+svm_best <- select_best(svm_tuned, metric = "roc_auc")
+rf_best  <- select_best(rf_tuned,  metric = "roc_auc")
+
+# Print them
+cat("Best Logistic Regression:\n"); print(log_best)
+cat("Best SVM:\n"); print(svm_best)
+cat("Best Random Forest:\n"); print(rf_best)
+```
+
+# 7. Final Fit and Evaluation on Test Set
+
+```{r}
+# Finalize best model (e.g., Random Forest)
+final_rf <- finalize_workflow(wf_rf, rf_best)
+
+# Split again for test evaluation (if needed)
+final_split <- initial_split(train_processed, prop = 0.9, strata = churn_label)
+final_fit <- last_fit(final_rf, split = final_split)
+
+# Show final performance metrics
+collect_metrics(final_fit)
+```
+
+# 8. ROC Curve
+
+```{r}
+# Get predictions
+preds <- collect_predictions(final_fit)
+
+# Compute ROC
+roc_obj <- roc(response = preds$churn_label, predictor = preds$.pred_Yes, levels = rev(levels(preds$churn_label)))
+roc_df <- data.frame(
+  fpr = 1 - roc_obj$specificities,
+  tpr = roc_obj$sensitivities
+)
+
+# Plot
+ggplot(roc_df, aes(x = fpr, y = tpr)) +
+  geom_line(color = "orange", size = 1.2) +
+  geom_abline(linetype = "dashed", color = "darkblue") +
+  labs(
+    title = "Receiver Operating Characteristic (ROC)",
+    x = "False Positive Rate",
+    y = "True Positive Rate",
+    caption = paste("AUC =", round(auc(roc_obj), 2))
+  ) +
+  theme_minimal(base_size = 14)
+```
+
+# 9. Model Evaluation Metrics
+
+### Confusion Matrix
+
+```{r}
+conf_mat(preds, truth = churn_label, estimate = .pred_class)
+```
+
+### Accuracy
+
+```{r}
+accuracy(preds, truth = churn_label, estimate = .pred_class)
+```
+
+### Precision & Recall
+
+```{r}
+yardstick::precision(data = preds, truth = churn_label, estimate = .pred_class)
+yardstick::recall(data = preds, truth = churn_label, estimate = .pred_class)
+```
+
+### All Metrics Summary
+
+```{r}
+yardstick::metrics(preds, truth = churn_label, estimate = .pred_class)
+```
+
+## Global Explanations
+
+### 1. Feature Importance (VIP)
+
+```{r}
+# Extract final model from last_fit
+final_model <- extract_fit_parsnip(final_fit)
+
+# Visualize top 20 important features
+vip(final_model, num_features = 20)
+```
+
+### 2. Partial Dependence Plot (PDP)
+
+```{r}
+# PDP for top feature (e.g., customer_service_calls)
+pdp_plot <- partial(
+  object = final_model,
+  pred.var = "customer_service_calls",
+  train = train_processed %>% select(-churn_label),
+  prob = TRUE,
+  which.class = 2  # class "Yes"
+)
+
+# Plot PDP
+autoplot(pdp_plot) + ggtitle("Partial Dependence: customer_service_calls")
+```
+
+---
+
+## Local Explanations
+
+### 3. LIME: Explaining Individual Predictions
+
+```{r}
+# Re-prepare the recipe if not already done
+rec_prep <- prep(rec, training = train)
+
+# Build LIME explainer
+explainer <- lime::lime(
+  x = bake(rec_prep, new_data = train) %>% select(-churn_label),
+  model = extract_fit_engine(final_model),
+  bin_continuous = TRUE
+)
+
+# Define features to include in local explanation
+custom_features <- c(
+  "customer_service_calls",
+  "contract_type_Month.to.Month",
+  "monthly_charge",
+  "intl_plan_yes",
+  "total_charges"
+)
+```
+
+#### LIME Explanation for Sample Observations
+
+```{r}
+# Loop through first 5 test observations
+for (i in 1:5) {
+  test_instance <- test[i:i, ]
+  test_instance_processed <- bake(rec_prep, new_data = test_instance) %>% select(-churn_label)
+  
+  explanation <- lime::explain(
+    x = test_instance_processed,
+    explainer = explainer,
+    labels = "Yes",
+    n_features = length(custom_features),
+    feature_select = "highest_weights",
+    features = custom_features
+  )
+  
+  # Plot explanation
+  print(plot_features(explanation, ncol = 1))
+}
+```
+
+---
+
+## SHAP Explanations (Global + Local)
+
+### 4. SHAP Values with `iml`
+
+```{r}
+# Wrap the final model with iml Predictor
+predictor <- Predictor$new(
+  model = final_model,
+  data = train_processed %>% select(-churn_label),
+  y = train_processed$churn_label,
+  type = "prob"
+)
+
+# Compute SHAP values for the first test observation
+shap <- Shapley$new(
+  predictor,
+  x.interest = test_processed %>%
+    select(-churn_label) %>%
+    slice(1)
+)
+
+# Select top features by mean absolute SHAP value
+top_features <- shap$results %>%
+  group_by(feature) %>%
+  summarise(mean_phi = mean(abs(phi))) %>%
+  arrange(desc(mean_phi)) %>%
+  slice_head(n = 38) %>%
+  pull(feature)
+
+# Filter results to include only top features
+shap$results <- shap$results %>%
+  filter(feature %in% top_features)
+
+# Visualize SHAP values for .pred_Yes
+shap$results %>%
+  filter(class == ".pred_Yes") %>%
+  ggplot(aes(x = reorder(feature, phi), y = phi)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "SHAP Explanation for Churned Customers",
+    x = "Feature",
+    y = "SHAP Value"
+  ) +
+  theme_minimal()
+```

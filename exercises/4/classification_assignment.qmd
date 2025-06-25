@@ -1,0 +1,64 @@
+---
+title: "Cars and classifications"
+author: Alfonso
+format: html
+code-fold: true
+code-tools: true
+embed-resources: true
+page-layout: full
+toc: true
+toc-title: tasks
+toc-location: left
+toc-expand: 2
+theme: minty
+knitr:
+  opts_chunk: 
+    collapse: true
+    R.options:
+    message: false
+    warning: false
+    code-fold: false
+---
+
+### Initialization
+
+```{r}
+#install.packages(c("tidyverse","tidymodels","discrim","MASS","naivebayes","kknn"))
+
+library(tidyverse)
+library(tidymodels)
+library(discrim)
+library(ISLR2)
+library(kableExtra)
+library(kknn)
+tidymodels_prefer()
+
+```
+
+### pre-processing
+
+-  From the Auto data set, transform the **mpg** variable into binary. Choose an appropriate threshold to define **mpg_hl** which indicates whether a car has high or low consumption (higher/lower than the chosen threshold).
+
+
+- Standardize the variables.
+
+### model fit and assessment
+
+```{r}
+
+```
+
+- Identify the predictors that have the greatest discriminatory power using scatterplot or boxplot, such as the one below(yes, you do need to replicate the one below).
+
+```{r}
+
+```
+
+
+- Creare un data set per il training dei modelli e uno per testarli.
+
+- Create a data set for training the models and one for testing them.
+
+- Perform a LDA, QDA, NaiveBayes and KNN  on the best predictors identified above: estimate the test error rate.
+
+- Should you need to tune the hyperparameters, use cross-validation.

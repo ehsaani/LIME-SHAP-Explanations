@@ -1,0 +1,141 @@
+---
+title: "Cars and classifications"
+author: Alfonso
+format: html
+code-fold: true
+code-tools: true
+embed-resources: true
+page-layout: full
+toc: true
+toc-title: tasks
+toc-location: left
+toc-expand: 2
+theme: minty
+knitr:
+  opts_chunk: 
+    collapse: true
+    R.options:
+    message: false
+    warning: false
+    code-fold: false
+---
+
+### Initialization
+
+```{r}
+# install.packages(c("tidyverse","tidymodels","discrim","MASS","naivebayes","kknn"))
+
+library(tidyverse)
+library(tidymodels)
+library(discrim)
+library(ISLR2)
+library(kableExtra)
+library(kknn)
+tidymodels_prefer()
+```
+
+### Pre-processing
+
+```{r}
+data("Auto")
+auto <- Auto %>%
+  na.omit() %>%
+  mutate(mpg_hl = if_else(mpg > median(mpg), "High", "Low"),
+         mpg_hl = as.factor(mpg_hl)) %>%
+  select(-name, -mpg)
+
+# Standardize numeric predictors
+auto_rec <- recipe(mpg_hl ~ ., data = auto) %>%
+  step_normalize(all_predictors()) %>%
+  prep()
+
+auto_std <- bake(auto_rec, new_data = NULL)
+```
+
+### Exploratory Visualization
+
+```{r}
+auto_long <- auto_std %>%
+  pivot_longer(-mpg_hl, names_to = "variable", values_to = "value")
+
+ggplot(auto_long, aes(x = mpg_hl, y = value, fill = mpg_hl)) +
+  geom_boxplot() +
+  facet_wrap(~ variable, scales = "free", ncol = 3) +
+  theme_minimal() +
+  labs(title = "Boxplots of Predictors by mpg_hl")
+```
+
+### Train/Test Split
+
+```{r}
+set.seed(123)
+auto_split <- initial_split(auto_std, prop = 0.8, strata = mpg_hl)
+auto_train <- training(auto_split)
+auto_test <- testing(auto_split)
+```
+
+### Model Fit and Assessment
+
+```{r}
+library(MASS)
+library(naivebayes)
+
+# LDA model
+lda_mod <- lda(mpg_hl ~ ., data = auto_train)
+lda_preds <- predict(lda_mod, auto_test)$class
+
+# QDA model
+qda_mod <- qda(mpg_hl ~ ., data = auto_train)
+qda_preds <- predict(qda_mod, auto_test)$class
+
+# Naive Bayes model
+nb_mod <- naive_bayes(mpg_hl ~ ., data = auto_train)
+nb_preds <- predict(nb_mod, auto_test)
+
+# KNN with tidymodels
+knn_spec <- nearest_neighbor(neighbors = tune()) %>%
+  set_engine("kknn") %>%
+  set_mode("classification")
+
+knn_wf <- workflow() %>%
+  add_model(knn_spec) %>%
+  add_formula(mpg_hl ~ .)
+
+set.seed(123)
+knn_res <- tune_grid(
+  knn_wf,
+  resamples = vfold_cv(auto_train, v = 5),
+  grid = tibble(neighbors = 1:15)
+)
+
+knn_best <- select_best(knn_res, metric = "accuracy")
+
+# Final KNN model
+final_knn <- finalize_workflow(knn_wf, knn_best) %>%
+  fit(data = auto_train)
+
+knn_preds <- predict(final_knn, auto_test)$.pred_class
+
+```
+
+### Model Comparison
+
+```{r}
+truth <- auto_test$mpg_hl
+
+results <- tibble(
+  model = c("LDA", "QDA", "Naive Bayes", "KNN"),
+  accuracy = c(
+    mean(lda_preds == truth),
+    mean(qda_preds == truth),
+    mean(nb_preds == truth),
+    mean(knn_preds == truth)
+  )
+)
+
+results %>%
+  arrange(desc(accuracy)) %>%
+  kable() %>%
+  kable_styling()
+
+```

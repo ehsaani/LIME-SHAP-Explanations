@@ -1,0 +1,82 @@
+---
+title: "Mitigating Class Imbalance with Tidymodels: Attrition Example"
+format:
+  html:
+    self-contained: true
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    theme: minty
+    number-sections: false
+execute:
+  warning: false
+  message: false
+---
+
+
+## Libraries
+
+```{r}
+library(tidymodels)
+library(themis)
+library(probably)
+library(hardhat)
+library(dplyr)
+library(ggplot2)
+library(modeldata)
+```
+
+## Load and Explore Data
+
+```{r}
+data(attrition)
+attrition <- attrition %>%
+  mutate(Attrition = factor(Attrition, levels = c("No", "Yes")))
+
+```
+
+- check what the data is about
+
+- check the class imbalance
+
+- check your predictors
+
+
+## Deal with class imbalance
+
+- pre-processing methods for class imbalance (e.g., upsampling, downsampling, SMOTE)
+
+- algorithms that can handle class imbalance (cost-sensitive learning). Define weights for observations given the class they are in:
+
+  - `importance_weights()`: used to create a new column in the data frame that contains the weights for each observation.
+  - `step_add_weights()`: used to add weights to the recipe.
+
+
+- threshold tuning: selecting the optimal threshold for classification
+
+
+## Learning flow
+
+- split the data
+
+- create the multiple recipes you need
+
+- create the model specifications for what you are willing to use
+
+- create the workflows
+
+- fit and assess the performance
+
+- focus on F1, `precision` and `recall` (sensitivity) metrics
+
+## Tasks
+
+- What is the best setup? 
+
+- How things improve over the solutions you get when imbalance is not dealt with?
+
+- bonus: what happens if the imbalance is more severe? (e.g., 95% vs 5%)
+
+

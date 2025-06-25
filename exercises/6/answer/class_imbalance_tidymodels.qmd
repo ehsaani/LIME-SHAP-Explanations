@@ -1,0 +1,146 @@
+---
+title: "Mitigating Class Imbalance with Tidymodels: Attrition Example"
+format:
+  html:
+    self-contained: true
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    theme: minty
+    number-sections: false
+execute:
+  warning: false
+  message: false
+---
+
+## Libraries
+
+```{r}
+library(tidymodels)
+library(themis)
+library(probably)
+library(hardhat)
+library(dplyr)
+library(ggplot2)
+library(modeldata)
+```
+
+## Load and Explore Data
+
+```{r}
+data(attrition)
+attrition <- attrition %>%
+  mutate(Attrition = factor(Attrition, levels = c("No", "Yes")))
+
+glimpse(attrition)
+table(attrition$Attrition)
+attrition %>% select(-Attrition) %>% summary()
+```
+
+## Deal with Class Imbalance
+
+### Preprocessing Methods
+
+```{r}
+# Downsampling
+rec_down <- recipe(Attrition ~ ., data = attrition) %>%
+  step_downsample(Attrition)
+
+# Upsampling
+rec_up <- recipe(Attrition ~ ., data = attrition) %>%
+  step_upsample(Attrition)
+
+# SMOTE
+rec_smote <- recipe(Attrition ~ ., data = attrition) %>%
+  step_smote(Attrition)
+```
+
+### Cost-sensitive Learning (Weights)
+
+```{r}
+class_counts <- table(attrition$Attrition)
+attrition_weights <- attrition %>%
+  mutate(.weight = 1 / class_counts[Attrition])
+```
+
+### Threshold Tuning
+
+```{r}
+threshold_metrics <- metric_set(roc_auc, pr_auc, accuracy, precision, recall, f_meas)
+```
+
+## Learning Flow
+
+```{r}
+set.seed(123)
+split <- initial_split(attrition_weights, strata = Attrition)
+train_data <- training(split)
+test_data <- testing(split)
+
+rec <- recipe(Attrition ~ ., data = train_data)
+
+model_spec <- logistic_reg() %>%
+  set_engine("glm")
+
+workflow <- workflow() %>%
+  add_model(model_spec) %>%
+  add_recipe(rec)
+
+# First, define the weight variable as a case weight in the recipe
+rec <- recipe(Attrition ~ ., data = train_data) %>%
+  update_role(.weight, new_role = "case_weight")
+
+# Recreate the workflow using the updated recipe
+workflow <- workflow() %>%
+  add_model(model_spec) %>%
+  add_recipe(rec)
+
+# Now fit without passing weights explicitly — tidymodels will use the case_weight role
+fit <- fit(workflow, data = train_data)
+
+```
+
+### Evaluate
+
+```{r}
+predictions <- predict(fit, test_data, type = "prob") %>%
+  bind_cols(predict(fit, test_data)) %>%
+  bind_cols(test_data)
+
+metrics <- predictions %>%
+  threshold_metrics(truth = Attrition, estimate = .pred_class, .pred_Yes)
+metrics
+```
+
+## Tasks
+
+- Best setup is the one maximizing F1, precision, and recall together.
+- Compare metrics without balancing:
+```{r}
+rec_no_balance <- recipe(Attrition ~ ., data = train_data)
+workflow_no_balance <- workflow() %>%
+  add_model(model_spec) %>%
+  add_recipe(rec_no_balance)
+fit_no_balance <- fit(workflow_no_balance, data = train_data)
+
+predictions_no_balance <- predict(fit_no_balance, test_data, type = "prob") %>%
+  bind_cols(predict(fit_no_balance, test_data)) %>%
+  bind_cols(test_data)
+
+metrics_no_balance <- predictions_no_balance %>%
+  threshold_metrics(truth = Attrition, estimate = .pred_class, .pred_Yes)
+metrics_no_balance
+```
+
+- **Bonus**: Simulate a more severe imbalance
+
+```{r}
+attrition_severe <- attrition %>%
+  filter(!(Attrition == "Yes" & runif(n()) < 0.5)) # drop half of the 'Yes'
+
+table(attrition_severe$Attrition)
+```
+
+Repeat the above modeling steps with `attrition_severe` to see performance drop without balancing.

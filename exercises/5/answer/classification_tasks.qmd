@@ -1,0 +1,160 @@
+---
+title: "Classification"
+subtitle: "a comparative review of basic classifiers: tasks"
+format: html
+code-fold: true
+code-tools: true
+embed-resources: true
+page-layout: full
+toc: true
+toc-title: tasks
+toc-location: left
+toc-expand: 2
+theme: minty
+knitr:
+  opts_chunk: 
+    collapse: true
+    R.options:
+    message: false
+    warning: false
+    code-fold: false
+---
+
+```{r, warning=FALSE, message=FALSE}
+library("mvtnorm")
+library("tidyverse")
+library("tidymodels")
+library("discrim")
+library("kableExtra")
+library("kknn")
+library("e1071")
+library("caret")
+
+set.seed(123)
+
+generate_data <- function(scenario) {
+  if (scenario == 1) {
+    mu1 <- c(1.25, 1)
+    mu2 <- c(1, 1.25)
+    sigma1 <- diag(2)
+    sigma2 <- diag(2)
+    n1 <- n2 <- 20
+  } else if (scenario == 2) {
+    mu1 <- c(1.25, 1)
+    mu2 <- c(1, 1.25)
+    sigma1 <- sigma2 <- matrix(c(2, -0.5, -0.5, 2), 2, 2)
+    n1 <- n2 <- 20
+  } else if (scenario == 3) {
+    mu1 <- c(1.25, 1)
+    mu2 <- c(1, 1.25)
+    sigma <- matrix(c(2, -0.5, -0.5, 2), 2, 2)
+    n1 <- n2 <- 50
+    x1 <- rmvt(n1, sigma = sigma, df = 3) + matrix(mu1, n1, 2, byrow = TRUE)
+    x2 <- rmvt(n2, sigma = sigma, df = 3) + matrix(mu2, n2, 2, byrow = TRUE)
+    return(list(data = data.frame(rbind(x1, x2), y = factor(rep(c(1, 2), each = n1))), test = NULL))
+  } else if (scenario == 4) {
+    mu1 <- c(1.25, 1)
+    mu2 <- c(1, 1.25)
+    sigma1 <- matrix(c(1, 0.5, 0.5, 1), 2, 2)
+    sigma2 <- matrix(c(1, -0.5, -0.5, 1), 2, 2)
+    n1 <- n2 <- 20
+  } else if (scenario == 5) {
+    n <- 50
+    X <- rmvnorm(n, mean = c(0, 0), sigma = diag(2))
+    eta <- 0.1 * X[,1] - X[,2] + 2 * X[,1] * X[,2] + 0.5 * X[,2]
+    prob <- exp(eta) / (1 + exp(eta))
+    y <- rbinom(n, 1, prob)
+    return(list(data = data.frame(X1 = X[,1], X2 = X[,2], y = factor(y)), test = NULL))
+  } else if (scenario == 6) {
+    mu1 <- c(1.25, 1)
+    mu2 <- c(1, 1.25)
+    sigma1 <- matrix(c(5, 0, 0, 2), 2, 2)
+    sigma2 <- matrix(c(1, 0, 0, 4), 2, 2)
+    n1 <- n2 <- 6
+  }
+
+  if (scenario != 3 && scenario != 5) {
+    x1 <- rmvnorm(n1, mean = mu1, sigma = sigma1)
+    x2 <- rmvnorm(n2, mean = mu2, sigma = sigma2)
+    train <- data.frame(rbind(x1, x2), y = factor(rep(c(1, 2), each = n1)))
+    test <- data.frame(rbind(rmvnorm(1000, mu1, sigma1), rmvnorm(1000, mu2, sigma2)), 
+                       y = factor(rep(c(1, 2), each = 1000)))
+    colnames(test)[1:2] <- c("X1", "X2")
+    return(list(data = train, test = test))
+  }
+}
+
+fit_models <- function(train) {
+  models <- list()
+  train <- train %>% rename(X1 = X1, X2 = X2)
+
+  models$log_reg <- glm(y ~ ., data = train, family = binomial)
+  models$lda <- discrim_linear() %>% set_engine("MASS") %>% fit(y ~ ., data = train)
+  models$qda <- discrim_quad() %>% set_engine("MASS") %>% fit(y ~ ., data = train)
+  models$knn1 <- train(y ~ ., data = train, method = "kknn", tuneGrid = data.frame(kmax = 1, distance = 2, kernel = "rectangular"))
+  models$knn_cv <- train(y ~ ., data = train, method = "kknn", trControl = trainControl("cv", number = 5))
+  models$nb <- naiveBayes(y ~ ., data = train)
+
+  return(models)
+}
+
+predict_models <- function(models, test) {
+  test <- test %>% rename(X1 = X1, X2 = X2)
+  
+  preds <- sapply(names(models), function(name) {
+    model <- models[[name]]
+    
+    if (name == "log_reg") {
+      prob <- predict(model, newdata = test, type = "response")
+      factor(ifelse(prob > 0.5, 2, 1), levels = c(1, 2))
+    
+    } else if (inherits(model, "train")) {
+      predict(model, newdata = test)
+    
+    } else if (name %in% c("lda", "qda")) {
+      predict(model, new_data = test)$.pred_class  # tidymodels engine
+    
+    } else if (name == "nb") {
+      predict(model, newdata = test)  # e1071 naiveBayes
+    
+    } else {
+      stop(paste("Unknown model:", name))
+    }
+  })
+  
+  colnames(preds) <- names(models)
+  return(preds)
+}
+
+
+evaluate_accuracy <- function(preds, truth) {
+  apply(preds, 2, function(p) mean(p == truth))
+}
+
+results <- list()
+
+for (scenario in 1:6) {
+  scenario_acc <- replicate(10, {
+    dat <- generate_data(scenario)
+    models <- fit_models(dat$data)
+    if (!is.null(dat$test)) {
+      preds <- predict_models(models, dat$test)
+      acc <- evaluate_accuracy(preds, dat$test$y)
+      acc
+    } else {
+      rep(NA, 6)
+    }
+  })
+  results[[paste0("Scenario_", scenario)]] <- data.frame(t(scenario_acc))
+}
+
+results_df <- bind_rows(results, .id = "Scenario")
+results_df_long <- results_df %>%
+  pivot_longer(-Scenario, names_to = "Model", values_to = "Accuracy")
+
+ggplot(results_df_long, aes(x = Model, y = Accuracy, fill = Model)) +
+  geom_boxplot() +
+  facet_wrap(~Scenario) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
